@@ -1,90 +1,98 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch # Import patch from unittest.mock
-from datetime import datetime, timedelta
-
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from unittest.mock import AsyncMock, patch
+from datetime import datetime, timedelta
 
-from app.services.auth_service import AuthService
-from app.models.invitation import Invitation, InvitationStatus # Import InvitationStatus
-from app.exceptions import ConflictError
-from app.services.email_service import EmailService # Import the actual class for mocking
+from app.main import app
+from app.models.invitation import Invitation
+from app.models.admin_user import AdminUser
+from app.core.security import create_access_token
+from app.dependencies import get_current_admin_user
+from app.services.email_service import EmailService
 
-# Mock the email_service instance globally
+# Mock the email_service instance globally for integration tests
 email_service_mock = AsyncMock(spec=EmailService)
-# Patch the imported email_service instance in the auth_service module
+
+# Override the get_current_admin_user dependency for testing
+def override_get_current_admin_user():
+    """Overrides the admin user dependency to return a mock admin user."""
+    return {"email": "testadmin@example.com", "role": "CTO"}
+
+app.dependency_overrides[get_current_admin_user] = override_get_current_admin_user
+
+# Temporarily patch the email_service instance used within AuthService
+original_email_service_path = 'app.services.auth_service.email_service'
 pytestmark = pytest.mark.asyncio
 
-@pytest.fixture
-def mock_db_session():
-    """Fixture to provide a mock AsyncSession."""
-    session = AsyncMock(spec=AsyncSession)
-    # Mock the execute method to return a mock result with scalar_one_or_none
-    session.execute.return_value = MagicMock()
-    session.execute.return_value.scalar_one_or_none.return_value = None # Default: no existing invitation
-    return session
-
-@pytest.fixture
-def auth_service(mock_db_session: AsyncMock):
-    """Fixture to provide an AuthService instance with a mock session."""
-    # Temporarily patch the email_service instance used within AuthService
-    original_email_service = AuthService.__module__ + '.email_service'
-    with patch(original_email_service, email_service_mock): # Use patch from unittest.mock
-        service = AuthService(mock_db_session)
-        yield service
-    # Reset the mock after the test
+@pytest.fixture(autouse=True)
+def mock_email_service_in_auth_service():
+    """Fixture to patch the email_service instance within the AuthService module."""
+    with patch(original_email_service_path, email_service_mock):
+        yield
+    # Reset the mock after each test
     email_service_mock.reset_mock()
 
 
-async def test_create_invitation_success(auth_service: AuthService, mock_db_session: AsyncMock):
-    """Test successful invitation creation and email sending."""
-    email = "new.user@example.com"
+async def test_create_invitation_success(client: AsyncClient, async_session: AsyncSession):
+    """Test successful creation of an invitation via the API."""
+    email = "new.participant@example.com"
 
-    # Mock the database add and refresh operations
-    mock_db_session.add.return_value = None
-    mock_db_session.commit.return_value = None
-    mock_db_session.refresh.return_value = None
+    response = await client.post("/api/v1/admin/invitations", params={"email": email})
 
-    # Mock the return value of the select query to indicate no existing invitation
-    mock_db_session.execute.return_value.scalar_one_or_none.return_value = None
+    assert response.status_code == 201
+    data = response.json()
 
-    invitation = await auth_service.create_invitation(email)
+    assert data["email"] == email
+    assert data["status"] == "PENDING"
+    assert "id" in data
+    assert "token" in data
+    assert "expires_at" in data
+    assert "created_at" in data
 
-    # Assert that a new invitation object was added to the session
-    mock_db_session.add.assert_called_once()
-    added_invitation = mock_db_session.add.call_args[0][0]
-    assert isinstance(added_invitation, Invitation)
-    assert added_invitation.email == email
-    assert added_invitation.status == InvitationStatus.PENDING # Assert against the Enum member
-    assert added_invitation.token is not None
-    assert added_invitation.expires_at > datetime.utcnow()
+    # Verify the invitation was created in the database
+    invitation_in_db = await async_session.execute(
+        select(Invitation).where(Invitation.email == email)
+    )
+    invitation = invitation_in_db.scalar_one_or_none()
+    assert invitation is not None
+    assert invitation.email == email
+    assert invitation.status == "PENDING"
+    assert invitation.token is not None
+    assert invitation.expires_at > datetime.utcnow() - timedelta(minutes=1)
 
-    # Assert that the session was committed and refreshed
-    mock_db_session.commit.assert_called_once()
-    mock_db_session.refresh.assert_called_once_with(added_invitation)
-
-    # Assert that the email service was called with the correct parameters
-    email_service_mock.send_invitation_email.assert_called_once_with(email, added_invitation.token)
-
-    # Assert the returned object is the database invitation object
-    assert invitation == added_invitation
+    # Verify email service was called
+    email_service_mock.send_invitation_email.assert_called_once_with(email, invitation.token)
 
 
-async def test_create_invitation_conflict(auth_service: AuthService, mock_db_session: AsyncMock):
-    """Test creating an invitation for an email with an existing pending invitation."""
-    email = "existing.user@example.com"
+async def test_create_invitation_conflict(client: AsyncClient, async_session: AsyncSession):
+    """Test attempting to create an invitation for an email with an existing pending invitation."""
+    email = "existing.pending@example.com"
 
-    # Mock the database query to return an existing invitation
-    mock_db_session.execute.return_value.scalar_one_or_none.return_value = Invitation(email=email, token="fake_token", status=InvitationStatus.PENDING, expires_at=datetime.utcnow() + timedelta(days=1)) # Use Enum member
+    # Pre-seed an existing pending invitation
+    existing_invitation = Invitation(
+        email=email,
+        token="existing_token",
+        status="PENDING",
+        expires_at=datetime.utcnow() + timedelta(days=1)
+    )
+    async_session.add(existing_invitation)
+    await async_session.commit()
 
-    # Assert that a ConflictError is raised
-    with pytest.raises(ConflictError, match=f"An active invitation already exists for {email}"):
-        await auth_service.create_invitation(email)
+    response = await client.post("/api/v1/admin/invitations", params={"email": email})
 
-    # Assert that no database changes were made
-    mock_db_session.add.assert_not_called()
-    mock_db_session.commit.assert_not_called()
-    mock_db_session.refresh.assert_not_called()
+    assert response.status_code == 409
+    data = response.json()
+    assert "detail" in data
+    assert f"An active invitation already exists for {email}" in data["detail"]
 
-    # Assert that the email service was not called
+    # Verify no new invitation was created in the database
+    invitations_in_db = await async_session.execute(
+        select(Invitation).where(Invitation.email == email)
+    )
+    # Should still only have the one existing invitation
+    assert len(invitations_in_db.scalars().all()) == 1
+
+    # Verify email service was not called
     email_service_mock.send_invitation_email.assert_not_called()
