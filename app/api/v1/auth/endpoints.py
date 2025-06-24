@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import OAuth2PasswordRequestForm # Will not use this as per previous decision
 
 from app.dependencies import get_db
 from app.services.auth_service import AuthService
-from app.schemas.auth import ParticipantRegisterPayload, JWTTokens
+from app.schemas.auth import ParticipantRegisterPayload, JWTTokens, LoginPayload # Added LoginPayload
 from app.exceptions import NotFoundError, ConflictError, ValidationError
 
 router = APIRouter(tags=["Authentication"])
@@ -57,3 +58,27 @@ async def register_participant(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during registration"
         )
+
+@router.post(
+    "/login",
+    response_model=JWTTokens,
+    status_code=status.HTTP_200_OK,
+    summary="Login for participants and admins",
+    description="Authenticates a user (participant or admin) and returns JWT tokens."
+)
+async def login(
+    login_data: LoginPayload, # Using LoginPayload as per TDD and schema availability
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Login for existing users (participants or admins).
+
+    - **email**: User's email
+    - **password**: User's password
+
+    Returns JWT access and refresh tokens.
+    """
+    auth_service = AuthService(db)
+    # HTTPException from login_user will be automatically handled by FastAPI
+    tokens = await auth_service.login_user(email=login_data.email, password=login_data.password)
+    return tokens

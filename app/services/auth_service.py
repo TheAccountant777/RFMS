@@ -6,14 +6,23 @@ from sqlalchemy import update
 from uuid import UUID
 
 from app.models.invitation import Invitation, InvitationStatus
+from fastapi import HTTPException, status # Added HTTPException and status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import update
+from uuid import UUID
+
+from app.models.invitation import Invitation, InvitationStatus
 from app.models.user import User
+from app.models.admin_user import AdminUser # Added AdminUser
 from app.models.referral_link import ReferralLink
 from app.schemas.invitation import InvitationCreate
-from app.schemas.user import UserCreate
-from app.schemas.auth import JWTTokens
+from app.schemas.user import UserCreate # Will be ParticipantRegisterPayload for actual registration
+from app.schemas.auth import JWTTokens, LoginPayload # Added LoginPayload, though not directly used in method signature
 from app.services.email_service import email_service
-from app.core.security import hash_password, create_access_token, create_refresh_token, generate_unique_code
+from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, generate_unique_code # Added verify_password
 from app.exceptions import ConflictError, NotFoundError, ValidationError
+
 
 class AuthService:
     def __init__(self, db: AsyncSession):
@@ -146,6 +155,49 @@ class AuthService:
         access_token = create_access_token(data={"sub": str(new_user.id)})
         refresh_token = create_refresh_token(data={"sub": str(new_user.id)})
         
+        return JWTTokens(
+            access_token=access_token,
+            refresh_token=refresh_token
+        )
+
+    async def login_user(self, *, email: str, password: str) -> JWTTokens:
+        """
+        Authenticates a user (participant or admin) and returns JWT tokens.
+
+        Args:
+            email: The user's email.
+            password: The user's plain text password.
+
+        Returns:
+            JWTTokens: Access and refresh tokens for the authenticated user.
+
+        Raises:
+            HTTPException: With status 401 if authentication fails.
+        """
+        user_to_authenticate: User | AdminUser | None = None
+
+        # 1. Try to find a participant user
+        result = await self.db.execute(select(User).where(User.email == email))
+        user_to_authenticate = result.scalar_one_or_none()
+
+        # 2. If not found, try to find an admin user
+        if not user_to_authenticate:
+            result = await self.db.execute(select(AdminUser).where(AdminUser.email == email))
+            user_to_authenticate = result.scalar_one_or_none()
+
+        # 3. Verify password if a user was found
+        if not user_to_authenticate or not verify_password(password, user_to_authenticate.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+                headers={"WWW-Authenticate": "Bearer"}, # Standard practice for 401
+            )
+
+        # 4. Generate JWT tokens
+        user_id = str(user_to_authenticate.id)
+        access_token = create_access_token(data={"sub": user_id, "user_type": user_to_authenticate.__class__.__name__.lower()})
+        refresh_token = create_refresh_token(data={"sub": user_id, "user_type": user_to_authenticate.__class__.__name__.lower()})
+
         return JWTTokens(
             access_token=access_token,
             refresh_token=refresh_token
