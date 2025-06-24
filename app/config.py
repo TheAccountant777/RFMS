@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     project_name: str = "Jijenga Referral System"
     database_url: Optional[str] = None
     jwt_secret_key: str = "test-secret-key-for-development-only-change-in-production"
+    access_token_expire_minutes: int = 30 # Default to 30 minutes
+    refresh_token_expire_days: int = 7    # Default to 7 days
     mpesa_api_key: Optional[str] = None
     resend_api_key: Optional[str] = None
     referral_base_url: str = "http://localhost:8000"

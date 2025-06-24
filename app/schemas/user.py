@@ -30,3 +30,13 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True # Alias: allow ORM models to be converted to schema
+
+# Schema for participant profile response (from TDD 2.5)
+class ParticipantProfileResponse(BaseModel):
+    id: UUID
+    full_name: str
+    email: EmailStr
+    phone_number: str
+
+    class Config:
+        from_attributes = True

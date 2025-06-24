@@ -57,3 +57,30 @@ async def register_participant(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during registration"
         )
+
+@router.post(
+    "/refresh",
+    response_model=JWTTokens,
+    status_code=status.HTTP_200_OK,
+    summary="Refresh an access token",
+    description="Obtains a new access token using a valid refresh token."
+)
+async def refresh_token(
+    payload: RefreshPayload, # Corrected type hint
+    db: AsyncSession = Depends(get_db)
+):
+    from app.schemas.auth import RefreshPayload # Ensure import is available
+
+    auth_service = AuthService(db)
+    try:
+        new_access_token = await auth_service.refresh_access_token(payload.refresh_token)
+        return JWTTokens(access_token=new_access_token, token_type="bearer")
+    except HTTPException as e:
+        raise e # Re-raise known HTTP exceptions from auth_service
+    except Exception as e:
+        # Log the exception for debugging
+        print(f"Error during token refresh: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during token refresh"
+        )

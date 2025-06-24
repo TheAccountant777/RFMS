@@ -114,3 +114,89 @@ async def test_create_invitation_conflict(client: AsyncClient, async_session: As
 
     # Verify email service was not called
     email_service_mock.send_invitation_email.assert_not_called()
+
+
+# --- Unit Tests for AuthService.refresh_access_token ---
+
+@pytest.mark.asyncio
+@patch('app.services.auth_service.create_access_token')
+@patch('app.services.auth_service.verify_token')
+async def test_refresh_access_token_success(mock_verify_token, mock_create_access_token):
+    from app.services.auth_service import AuthService
+    from fastapi import HTTPException
+
+    mock_db_session = AsyncMock(spec=AsyncSession)
+    auth_service = AuthService(db=mock_db_session)
+
+    user_id = str(uuid.uuid4())
+    mock_verify_token.return_value = {"sub": user_id, "type": "refresh", "exp": datetime.utcnow() + timedelta(days=1)}
+    mock_create_access_token.return_value = "new_mock_access_token"
+
+    refresh_token_str = "valid_refresh_token"
+    new_token = await auth_service.refresh_access_token(refresh_token_str)
+
+    assert new_token == "new_mock_access_token"
+    mock_verify_token.assert_called_once_with(refresh_token_str)
+    mock_create_access_token.assert_called_once_with(data={"sub": user_id, "type": "access"})
+
+@pytest.mark.asyncio
+@patch('app.services.auth_service.verify_token')
+async def test_refresh_access_token_invalid_token_none(mock_verify_token):
+    from app.services.auth_service import AuthService
+    from fastapi import HTTPException
+
+    mock_db_session = AsyncMock(spec=AsyncSession)
+    auth_service = AuthService(db=mock_db_session)
+
+    mock_verify_token.return_value = None # Simulate token that fails verification (expired, malformed)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await auth_service.refresh_access_token("invalid_token_str")
+
+    assert exc_info.value.status_code == 401
+    assert "Could not validate credentials" in str(exc_info.value.detail)
+    mock_verify_token.assert_called_once_with("invalid_token_str")
+
+@pytest.mark.asyncio
+@patch('app.services.auth_service.verify_token')
+async def test_refresh_access_token_wrong_type(mock_verify_token):
+    from app.services.auth_service import AuthService
+    from fastapi import HTTPException
+
+    mock_db_session = AsyncMock(spec=AsyncSession)
+    auth_service = AuthService(db=mock_db_session)
+
+    user_id = str(uuid.uuid4())
+    # Simulate a token that is valid but is an "access" token instead of "refresh"
+    mock_verify_token.return_value = {"sub": user_id, "type": "access", "exp": datetime.utcnow() + timedelta(minutes=15)}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await auth_service.refresh_access_token("access_token_used_as_refresh")
+
+    assert exc_info.value.status_code == 401
+    assert "Invalid token type, expected refresh token" in str(exc_info.value.detail)
+    mock_verify_token.assert_called_once_with("access_token_used_as_refresh")
+
+@pytest.mark.asyncio
+@patch('app.services.auth_service.verify_token')
+async def test_refresh_access_token_no_sub(mock_verify_token):
+    from app.services.auth_service import AuthService
+    from fastapi import HTTPException
+
+    mock_db_session = AsyncMock(spec=AsyncSession)
+    auth_service = AuthService(db=mock_db_session)
+
+    # Simulate a valid "refresh" token but missing the "sub" (user_id) claim
+    mock_verify_token.return_value = {"type": "refresh", "exp": datetime.utcnow() + timedelta(days=1)}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await auth_service.refresh_access_token("refresh_token_no_sub")
+
+    assert exc_info.value.status_code == 401
+    assert "Could not validate credentials" in str(exc_info.value.detail) # from user_id is None check
+    mock_verify_token.assert_called_once_with("refresh_token_no_sub")
+
+# Note: Expiry is implicitly tested by mock_verify_token.return_value = None,
+# as verify_token (the real one) would return None for an expired token.
+# If verify_token itself raised specific exceptions for expiry, we could test that.
+# For now, if it's expired, it's treated as any other invalid token by refresh_access_token.

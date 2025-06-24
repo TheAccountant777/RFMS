@@ -151,5 +151,44 @@ class AuthService:
             refresh_token=refresh_token
         )
 
+    async def refresh_access_token(self, refresh_token_str: str) -> str:
+        """
+        Verifies a refresh token and issues a new access token.
+        """
+        from app.core.security import verify_token, create_access_token # Local import for security functions
+        from jose import jwt, JWTError
+        from fastapi import HTTPException, status
+
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+        payload = verify_token(refresh_token_str)
+        if payload is None:
+            raise credentials_exception
+
+        token_type = payload.get("type")
+        if token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type, expected refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+
+        # Optionally, check if the user still exists and is active
+        # user = await self.db.get(User, UUID(user_id))
+        # if not user or not user.is_active: # Assuming an is_active field
+        #     raise credentials_exception
+
+        new_access_token_data = {"sub": str(user_id), "type": "access"}
+        new_access_token = create_access_token(data=new_access_token_data)
+        return new_access_token
+
 # Note: AuthService instances should be created per request to manage the DB session.
 # This class is not instantiated globally like EmailService.

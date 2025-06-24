@@ -15,11 +15,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Creates a JWT access token."""
     to_encode = data.copy()
+    if "type" not in to_encode: # Ensure type is set, default to access
+        to_encode["type"] = "access"
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         # Default expiry time (e.g., 15 minutes)
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=ALGORITHM)
     return encoded_jwt
@@ -27,11 +29,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Creates a JWT refresh token with longer expiry."""
     to_encode = data.copy()
+    to_encode["type"] = "refresh" # Ensure type is set to refresh
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         # Default expiry time for refresh token (e.g., 7 days)
-        expire = datetime.utcnow() + timedelta(days=7)
+        expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=ALGORITHM)
     return encoded_jwt
