@@ -24,7 +24,7 @@ class User(Base):
     email = Column(Text, nullable=False, unique=True)
     password_hash = Column(Text, nullable=False)
     phone_number = Column(Text, nullable=False, unique=True) # Validation handled in Pydantic
-    status = Column(Enum(UserStatus, name='user_status'), nullable=False, server_default=UserStatus.ACTIVE.value)
+    status = Column(Enum(UserStatus, name='user_status', create_type=False), nullable=False, server_default=UserStatus.ACTIVE.value)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

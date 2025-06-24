@@ -130,3 +130,53 @@ async def test_register_invalid_phone_format(client: AsyncClient, test_db):
     
     assert response.status_code == 422
     assert "Phone number must be in valid Kenyan format" in response.json()["detail"][0]["msg"]
+
+@pytest.mark.asyncio
+async def test_register_expired_token(client: AsyncClient, test_db):
+    """Test registration with an expired token."""
+    # Create an expired invitation
+    expired_invitation = Invitation(
+        email="expired@example.com",
+        token="expired_test_token",
+        status=InvitationStatus.PENDING,
+        expires_at=datetime.utcnow() - timedelta(days=1) # Expired yesterday
+    )
+    test_db.add(expired_invitation)
+    await test_db.commit()
+
+    response = await client.post(
+        "/api/v1/auth/register?invitation_token=expired_test_token",
+        json={
+            "full_name": "Test User",
+            "password": "password123",
+            "phone_number": "+254700000000"
+        }
+    )
+
+    assert response.status_code == 404
+    assert "Invalid or expired invitation token" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_register_used_token(client: AsyncClient, test_db):
+    """Test registration with an already used (accepted) token."""
+    # Create a used invitation
+    used_invitation = Invitation(
+        email="used@example.com",
+        token="used_test_token",
+        status=InvitationStatus.ACCEPTED, # Already accepted
+        expires_at=datetime.utcnow() + timedelta(days=1) # Not expired
+    )
+    test_db.add(used_invitation)
+    await test_db.commit()
+
+    response = await client.post(
+        "/api/v1/auth/register?invitation_token=used_test_token",
+        json={
+            "full_name": "Test User",
+            "password": "password123",
+            "phone_number": "+254711111111"
+        }
+    )
+
+    assert response.status_code == 404
+    assert "Invalid or expired invitation token" in response.json()["detail"]

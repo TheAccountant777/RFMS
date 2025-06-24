@@ -23,7 +23,7 @@ class ReferralLink(Base):
     unique_code = Column(Text, nullable=False, unique=True)
     click_count = Column(Integer, nullable=False, server_default='0')
     conversion_count = Column(Integer, nullable=False, server_default='0')
-    status = Column(Enum(LinkStatus, name='link_status'), nullable=False, server_default=LinkStatus.ACTIVE.value)
+    status = Column(Enum(LinkStatus, name='link_status', create_type=False), nullable=False, server_default=LinkStatus.ACTIVE.value)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
