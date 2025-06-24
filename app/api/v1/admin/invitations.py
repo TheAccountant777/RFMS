@@ -31,7 +31,8 @@ async def create_invitation(
             email=invitation.email,
             token=invitation.token, # Include token in response for testing/debugging, remove in production if not needed
             expires_at=invitation.expires_at,
-            status=invitation.status
+            status=invitation.status,
+            created_at=invitation.created_at
         )
     except ConflictError as e:
         raise HTTPException(

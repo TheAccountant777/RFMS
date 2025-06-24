@@ -9,10 +9,19 @@ from fastapi import FastAPI
 from app.main import app
 from app.core.database import Base, get_db
 from app.config import settings
+import os
 
-# Test database URL - should be set in .env.test or overridden here
-# Use lowercase database_url to match the field name in Settings
-TEST_DATABASE_URL = settings.database_url + "_test" if settings.database_url else "sqlite+aiosqlite:///./test.db"
+# Import all models to ensure they're registered with Base.metadata
+from app.models.invitation import Invitation
+from app.models.user import User
+from app.models.referral_link import ReferralLink
+from app.models.admin_user import AdminUser
+from app.models.earning import Earning
+from app.models.payment import Payment
+from app.models.referral import Referral
+
+# Test database URL - use SQLite for tests to avoid external dependencies
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
 # Create test engine and session
 test_engine = create_async_engine(
@@ -33,9 +42,18 @@ def event_loop():
     yield loop
     loop.close()
 
+def remove_schema_from_metadata(metadata):
+    """Remove schema from all tables in metadata for SQLite compatibility."""
+    for table in metadata.tables.values():
+        table.schema = None
+
 @pytest.fixture(scope="session")
 async def setup_database():
     """Set up the test database once for the test session."""
+    # For SQLite, we need to remove schema references from table metadata
+    # This is a workaround for testing with SQLite
+    remove_schema_from_metadata(Base.metadata)
+    
     # Create all tables
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -46,10 +64,27 @@ async def setup_database():
     # Drop all tables after tests
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    
+    # Clean up test database file
+    if os.path.exists("./test.db"):
+        os.remove("./test.db")
 
 @pytest.fixture
 async def test_db(setup_database):
     """Create a fresh database session for each test."""
+    async with TestingSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            # Clean up all data after each test
+            for table in reversed(Base.metadata.sorted_tables):
+                await session.execute(table.delete())
+            await session.commit()
+            await session.close()
+
+@pytest.fixture
+async def async_session(setup_database):
+    """Create a fresh database session for each test (alias for test_db)."""
     async with TestingSessionLocal() as session:
         yield session
         # Roll back any changes made during the test

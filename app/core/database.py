@@ -1,8 +1,8 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import declarative_base
 from typing import AsyncGenerator
 
 from app.config import settings
+from app.models.base import Base
 
 # Create an asynchronous database engine
 # Use the database_url from settings
@@ -15,8 +15,7 @@ async_session = async_sessionmaker(
     class_=AsyncSession # Use AsyncSession
 )
 
-# Define a base class for declarative models
-Base = declarative_base()
+# Base is imported from app.models.base
 
 # Dependency for FastAPI to get a database session
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

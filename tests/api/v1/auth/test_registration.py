@@ -2,6 +2,8 @@ import pytest
 from httpx import AsyncClient
 from datetime import datetime, timedelta
 from unittest.mock import patch
+from sqlalchemy import select
+import uuid
 
 from app.models.invitation import Invitation, InvitationStatus
 from app.models.user import User
@@ -12,10 +14,12 @@ async def test_register_participant_success(client: AsyncClient, test_db):
     """Test successful registration with valid token."""
     # Create a test invitation in the database
     invitation = Invitation(
+        id=uuid.uuid4(),  # Provide UUID manually for SQLite compatibility
         email="test@example.com",
         token="valid_test_token",
         status=InvitationStatus.PENDING,
-        expires_at=datetime.utcnow() + timedelta(days=1)
+        expires_at=datetime.utcnow() + timedelta(days=1),
+        created_at=datetime.utcnow()  # Provide created_at manually
     )
     test_db.add(invitation)
     await test_db.commit()
@@ -37,22 +41,22 @@ async def test_register_participant_success(client: AsyncClient, test_db):
     
     # Verify database state
     # Check that user was created
-    user_result = await test_db.execute("SELECT * FROM referral.users WHERE email = 'test@example.com'")
-    user = user_result.fetchone()
+    user_result = await test_db.execute(select(User).where(User.email == "test@example.com"))
+    user = user_result.scalar_one_or_none()
     assert user is not None
     assert user.full_name == "Test User"
     assert user.phone_number == "+254712345678"
     
     # Check that referral link was created
-    referral_link_result = await test_db.execute(f"SELECT * FROM referral.referral_links WHERE user_id = '{user.id}'")
-    referral_link = referral_link_result.fetchone()
+    referral_link_result = await test_db.execute(select(ReferralLink).where(ReferralLink.user_id == user.id))
+    referral_link = referral_link_result.scalar_one_or_none()
     assert referral_link is not None
     assert len(referral_link.unique_code) > 0
     
     # Check that invitation was marked as accepted
-    invitation_result = await test_db.execute("SELECT * FROM referral.invitations WHERE token = 'valid_test_token'")
-    invitation = invitation_result.fetchone()
-    assert invitation.status == InvitationStatus.ACCEPTED.value
+    invitation_result = await test_db.execute(select(Invitation).where(Invitation.token == "valid_test_token"))
+    invitation = invitation_result.scalar_one_or_none()
+    assert invitation.status == InvitationStatus.ACCEPTED
 
 @pytest.mark.asyncio
 async def test_register_invalid_token(client: AsyncClient):
@@ -74,18 +78,22 @@ async def test_register_duplicate_phone(client: AsyncClient, test_db):
     """Test registration with a phone number that's already registered."""
     # Create a test invitation
     invitation = Invitation(
+        id=uuid.uuid4(),
         email="new@example.com",
         token="another_valid_token",
         status=InvitationStatus.PENDING,
-        expires_at=datetime.utcnow() + timedelta(days=1)
+        expires_at=datetime.utcnow() + timedelta(days=1),
+        created_at=datetime.utcnow()
     )
     
     # Create an existing user with the same phone number
     existing_user = User(
+        id=uuid.uuid4(),
         full_name="Existing User",
         email="existing@example.com",
         password_hash="hashed_password",
-        phone_number="+254712345678"
+        phone_number="+254712345678",
+        created_at=datetime.utcnow()
     )
     
     test_db.add(invitation)
@@ -110,10 +118,12 @@ async def test_register_invalid_phone_format(client: AsyncClient, test_db):
     """Test registration with an invalid phone number format."""
     # Create a test invitation
     invitation = Invitation(
+        id=uuid.uuid4(),
         email="test@example.com",
         token="phone_format_test_token",
         status=InvitationStatus.PENDING,
-        expires_at=datetime.utcnow() + timedelta(days=1)
+        expires_at=datetime.utcnow() + timedelta(days=1),
+        created_at=datetime.utcnow()
     )
     test_db.add(invitation)
     await test_db.commit()
@@ -136,10 +146,12 @@ async def test_register_expired_token(client: AsyncClient, test_db):
     """Test registration with an expired token."""
     # Create an expired invitation
     expired_invitation = Invitation(
+        id=uuid.uuid4(),
         email="expired@example.com",
         token="expired_test_token",
         status=InvitationStatus.PENDING,
-        expires_at=datetime.utcnow() - timedelta(days=1) # Expired yesterday
+        expires_at=datetime.utcnow() - timedelta(days=1), # Expired yesterday
+        created_at=datetime.utcnow() - timedelta(days=2)
     )
     test_db.add(expired_invitation)
     await test_db.commit()
@@ -161,10 +173,12 @@ async def test_register_used_token(client: AsyncClient, test_db):
     """Test registration with an already used (accepted) token."""
     # Create a used invitation
     used_invitation = Invitation(
+        id=uuid.uuid4(),
         email="used@example.com",
         token="used_test_token",
         status=InvitationStatus.ACCEPTED, # Already accepted
-        expires_at=datetime.utcnow() + timedelta(days=1) # Not expired
+        expires_at=datetime.utcnow() + timedelta(days=1), # Not expired
+        created_at=datetime.utcnow()
     )
     test_db.add(used_invitation)
     await test_db.commit()
