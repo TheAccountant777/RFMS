@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file='.env',
         env_file_encoding='utf-8',
-        extra='ignore',  # Changed from 'allow' to 'ignore' - this is the key fix
+        extra='allow',  # Allow extra fields to prevent validation errors
         case_sensitive=False,
         env_ignore_empty=True,
         validate_assignment=True

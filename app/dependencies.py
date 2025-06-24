@@ -3,18 +3,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import async_session # Assuming database setup in app.core.database
+from app.core.database import get_db # Import get_db from database module
 from app.core.security import verify_token # Assuming JWT verification in app.core.security
 from app.models.admin_user import AdminUser # Import AdminUser model
 from app.models.user import User # Import User model (for checking if not admin)
 
 # OAuth2PasswordBearer for token extraction from header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login") # Token endpoint will be implemented later
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency that provides an async database session."""
-    async with async_session() as session:
-        yield session
 
 async def get_current_user(db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)):
     """Dependency that gets the current authenticated user (admin or participant)."""

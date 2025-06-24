@@ -5,8 +5,12 @@ class ConflictError(HTTPException):
     def __init__(self, detail: str = "Resource conflict"):
         super().__init__(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
-# You can define other custom exceptions here as needed
-# class NotFoundError(HTTPException):
-#     """Custom exception for resource not found."""
-#     def __init__(self, detail: str = "Resource not found"):
-#         super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+class NotFoundError(HTTPException):
+    """Custom exception for resource not found."""
+    def __init__(self, detail: str = "Resource not found"):
+        super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+class ValidationError(HTTPException):
+    """Custom exception for validation errors."""
+    def __init__(self, detail: str = "Validation error"):
+        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)

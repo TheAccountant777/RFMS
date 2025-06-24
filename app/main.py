@@ -1,15 +1,8 @@
 from fastapi import FastAPI
-from pydantic_settings import BaseSettings
 
 from app.api.v1.router import api_router # Import the v1 api router
+from app.config import settings
 
-class Settings(BaseSettings):
-    project_name: str = "Jijenga Referral System"
-    
-    class Config:
-        env_file = ".env"
-
-settings = Settings()
 app = FastAPI(title=settings.project_name)
 
 # Include the v1 API router

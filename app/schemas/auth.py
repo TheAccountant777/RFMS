@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
+import re
 
 # --- Auth Payloads ---
 
@@ -7,7 +8,16 @@ from typing import Optional
 class ParticipantRegisterPayload(BaseModel):
     full_name: str
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long.")
-    phone_number: str = Field(..., description="Must be a valid Kenyan mobile number format.") # Add custom validator
+    phone_number: str = Field(..., description="Must be a valid Kenyan mobile number format.")
+    
+    @field_validator('phone_number')
+    @classmethod
+    def validate_phone_number(cls, v):
+        # Validate Kenyan phone number format (e.g., +254712345678)
+        pattern = r'^\+254[7,1][0-9]{8}$'
+        if not re.match(pattern, v):
+            raise ValueError("Phone number must be in valid Kenyan format (e.g., +254712345678)")
+        return v
 
 # Schema for login payload (from TDD 2.3)
 class LoginPayload(BaseModel):

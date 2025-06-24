@@ -1,11 +1,16 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt, JWTError
+from passlib.context import CryptContext
+import secrets
+import string
 
 from app.config import settings
 
 # Algorithm for JWT
 ALGORITHM = "HS256"
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Creates a JWT access token."""
@@ -19,6 +24,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Creates a JWT refresh token with longer expiry."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        # Default expiry time for refresh token (e.g., 7 days)
+        expire = datetime.utcnow() + timedelta(days=7)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 def verify_token(token: str):
     """Verifies a JWT token and returns the payload."""
     try:
@@ -28,5 +45,18 @@ def verify_token(token: str):
         # Invalid token or signature
         return None
 
-# Note: You might also want functions for creating refresh tokens and password hashing here.
-# Password hashing is typically handled by passlib.
+def hash_password(password: str) -> str:
+    """Hashes a password using bcrypt."""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifies a password against its hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def generate_unique_code(length: int = 8) -> str:
+    """Generates a unique code for referral links."""
+    # Use uppercase letters and digits for better readability
+    alphabet = string.ascii_uppercase + string.digits
+    # Exclude similar looking characters
+    alphabet = alphabet.replace('O', '').replace('0', '').replace('I', '').replace('1', '')
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
